@@ -1,0 +1,16 @@
+{
+ "version": 1,
+ "name": "bad-equation",
+ "host": "mjwarp",
+ "plugins": [
+  "phost_author.expression_impls"
+ ],
+ "stages": {
+  "dof.passive_force": {
+   "impl": "dof.passive_force/expression",
+   "params": {
+    "expr": "__import__('os').system('true')"
+   }
+  }
+ }
+}

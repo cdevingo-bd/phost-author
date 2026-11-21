@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phost-author"
+version = "0.1.0.dev0"
+description = "Author phost stages: a typed-equation DSL and a sandbox for user-written kernels"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+dependencies = ["phost", "numpy>=1.24"]
+
+[project.optional-dependencies]
+gpu = ["warp-lang", "mujoco", "mujoco-warp", "phost-lab"]
+test = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+phost_author = ["templates/*.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

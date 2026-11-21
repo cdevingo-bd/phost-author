@@ -1,0 +1,20 @@
+{
+ "version": 1,
+ "name": "typed-pd",
+ "host": "mjwarp",
+ "plugins": [
+  "phost_author.expression_impls"
+ ],
+ "note": "model-changing: the controller is the typed equation a*(b - length) - c*velocity (the same law as examples/pd_arm.json in phost-lab)",
+ "stages": {
+  "control.law": {
+   "impl": "control.law/expression",
+   "params": {
+    "expr": "a*(b - length) - c*velocity",
+    "a": 30.0,
+    "b": 0.0,
+    "c": 2.0
+   }
+  }
+ }
+}

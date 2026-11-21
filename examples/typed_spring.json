@@ -1,0 +1,21 @@
+{
+ "version": 1,
+ "name": "typed-spring",
+ "host": "mjwarp",
+ "plugins": [
+  "phost_author.expression_impls"
+ ],
+ "note": "model-changing: a typed nonlinear, time-dependent force on every slide and hinge DOF",
+ "stages": {
+  "dof.passive_force": {
+   "impl": "dof.passive_force/expression",
+   "params": {
+    "expr": "-a*q - b*q**3 + c*sin(d*time)",
+    "a": 2.0,
+    "b": 5.0,
+    "c": 0.2,
+    "d": 3.0
+   }
+  }
+ }
+}
