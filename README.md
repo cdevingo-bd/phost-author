@@ -31,6 +31,10 @@ about 3e-4 away at 2 ms. The derivative is checked by the contract against centr
 evaluation. `implicit: false` applies the law as a plain explicit force. At a kink (`abs`, `min`, `max`, `clamp`,
 `where`) the derivative is that of the branch taken.
 
+`expression_impls.preview(stage, text, constants, sweep=..., at=..., lo=..., hi=..., n=...)` checks an equation and
+samples it along one variable without a simulation, and for a force law returns the symbolic derivative as text and
+its sampled damping. A bad equation raises `ExpressionError` with the message to show.
+
 ## Submitting a kernel
 
 `submit.check_submission(Submission(source))` runs the Python source of a user's runtime (see

@@ -14,6 +14,7 @@ tree, so that a host whose integrator treats joint damping implicitly does the s
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -168,6 +169,38 @@ def _impl(target: Target) -> Impl:
         extensions_optional=(forces.IMPLICIT,) if target.derivative_of else (),
         applicable=target.applicable, advisory=target.advisory, check_params=check,
         factory=lambda host, params, t=target: _Runtime(t, host, params), reference=_reference(target))
+
+
+def preview(stage: str, text: str, constants: Mapping[str, float] | None = None, sweep: str | None = None,
+            at: Mapping[str, float] | None = None, lo: float = -1.0, hi: float = 1.0, n: int = 101) -> dict:
+    """What an equation does, without a simulation: check it and sample it along one variable.
+
+    ``sweep`` (default: the stage's first variable) runs from ``lo`` to ``hi`` over ``n`` points while the other
+    variables stay at the values in ``at`` (default 0). Returns the variables, the sample points, the law's values,
+    and for a force law the symbolic derivative with respect to ``v`` as text and its sampled damping. An
+    unacceptable equation raises ``ExpressionError`` with the message a person should see.
+    """
+    if stage not in TARGETS:
+        raise ContractError(f"no typed-equation stage {stage!r}; known: {sorted(TARGETS)}")
+    target = TARGETS[stage]
+    sweep = sweep or target.variables[0]
+    if sweep not in target.variables:
+        raise ContractError(f"cannot sweep {sweep!r}; the variables are {list(target.variables)}")
+    if not (2 <= n <= 2001) or not np.isfinite([lo, hi]).all() or not lo < hi:
+        raise ContractError("a preview needs lo < hi (finite) and between 2 and 2001 points")
+    values = {name: (at or {}).get(name, 0.0) for name in target.variables}
+    given = {c: float((constants or {}).get(c, 0.0)) for c in expr.CONSTANTS}
+    expression = expr.parse(text, target.variables)
+    xs = np.linspace(lo, hi, n)
+    env = {**values, **given, sweep: xs}
+    out: dict[str, Any] = dict(variables=list(target.variables), sweep=sweep, x=xs.tolist(), key=expression.key,
+                               y=np.broadcast_to(expr.evaluate(expression, env), xs.shape).tolist())
+    if target.derivative_of:
+        slope = expr.differentiate(expression, target.derivative_of)
+        out["derivative"] = dict(of=target.derivative_of, text=ast.unparse(slope.tree.body),
+                                 damping=np.broadcast_to(-expr.evaluate(slope, env), xs.shape).tolist())
+    out["finite"] = bool(np.isfinite(out["y"]).all())
+    return out
 
 
 def register(registry: Registry) -> None:

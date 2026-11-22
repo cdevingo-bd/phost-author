@@ -135,3 +135,56 @@ def test_implicit_false_reports_no_damping(registry):
 def test_the_control_law_has_no_implicit_parameter(registry):
     assert "implicit" not in [p.name for p in registry.impl(CL).params]
     assert registry.impl(CL).extensions_optional == ()
+
+
+# ---- preview: what an equation does, without a simulation ----
+
+def test_preview_samples_the_law_along_the_first_variable():
+    from phost_author.expression_impls import preview
+    out = preview("dof.passive_force", "-a*q", dict(a=3.0), lo=-1, hi=1, n=5)
+    assert out["variables"] == ["q", "v", "time"] and out["sweep"] == "q"
+    assert out["x"] == [-1, -0.5, 0, 0.5, 1] and out["y"] == [3, 1.5, -0, -1.5, -3]
+    assert out["finite"] and out["key"]
+
+
+def test_preview_holds_the_other_variables_where_asked():
+    from phost_author.expression_impls import preview
+    out = preview("dof.passive_force", "q*v", sweep="q", at=dict(v=2.0), lo=0, hi=1, n=3)
+    assert out["y"] == [0, 1.0, 2.0]
+
+
+def test_preview_gives_the_symbolic_damping_of_a_force_law():
+    from phost_author.expression_impls import preview
+    out = preview("dof.passive_force", "-a*v - b*v**3", dict(a=2.0, b=1.0), sweep="v", lo=-1, hi=1, n=3)
+    assert out["derivative"]["of"] == "v" and "v" in out["derivative"]["text"]
+    # law = -a v - b v^3, so damping = -d law/dv = a + 3 b v^2 = 2 + 3 v^2
+    assert out["derivative"]["damping"] == pytest.approx([5.0, 2.0, 5.0])
+
+
+def test_a_control_law_has_no_derivative_entry():
+    from phost_author.expression_impls import preview
+    assert "derivative" not in preview("control.law", "-a*length", dict(a=1.0), lo=0, hi=1, n=3)
+
+
+def test_preview_reports_a_law_that_leaves_the_finite_numbers():
+    from phost_author.expression_impls import preview
+    assert preview("dof.passive_force", "1/q", lo=-1, hi=1, n=3)["finite"] is False
+
+
+@pytest.mark.parametrize("kwargs,message", [
+    (dict(stage="nope", text="q"), "no typed-equation stage"),
+    (dict(stage="dof.passive_force", text="q", sweep="zz"), "cannot sweep"),
+    (dict(stage="dof.passive_force", text="q", lo=1, hi=1), "lo < hi"),
+    (dict(stage="dof.passive_force", text="q", n=1), "lo < hi"),
+    (dict(stage="dof.passive_force", text="q", lo=float("nan")), "lo < hi"),
+])
+def test_preview_refuses_bad_requests(kwargs, message):
+    from phost_author.expression_impls import preview
+    with pytest.raises(ContractError, match=message):
+        preview(**kwargs)
+
+
+def test_preview_refuses_an_unacceptable_equation_with_the_parser_message():
+    from phost_author.expression_impls import preview
+    with pytest.raises(ExpressionError):
+        preview("dof.passive_force", "__import__('os')")
