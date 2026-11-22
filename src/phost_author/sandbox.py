@@ -4,7 +4,9 @@ Enforced (when ``bwrap`` is available, reported as ``sandbox="bwrap"``):
   * the filesystem is read-only, the user's home directory and /tmp are replaced by empty private ones, and only the
     paths the interpreter needs are mounted back, read-only;
   * no network (own network namespace), own pid and ipc namespaces, the process tree dies with the parent;
-  * a wall-clock limit (the whole tree is killed), a CPU-time limit, a limit on file size, no core dumps;
+  * a wall-clock limit (the whole tree is killed), a CPU-time limit, a limit on the size of any one file, a limit on
+    the total growth of the scratch directory (polled, so a fast writer can overshoot by a fraction of a second of
+    writing), no core dumps;
   * one writable scratch directory (the kernel cache), nothing else.
 
 Not enforced:
@@ -34,15 +36,29 @@ class SandboxUnavailable(RuntimeError):
     pass
 
 
+# Warp compiles a submission's kernels with NVRTC, which needs to create files of this size. Measured on Warp 1.16 with a
+# warm cache and a one-line kernel: a 64 MB per-file limit fails the compile, 128 MB succeeds. A larger kernel was not
+# measured, which is why the default is far above this floor. A policy below it could never run any kernel.
+MIN_COMPILE_FILE_MB = 128
+
+
 @dataclass(frozen=True)
 class Policy:
     wall_seconds: float = 300.0
     cpu_seconds: int = 240
-    max_file_mb: int = 1024
+    max_file_mb: int = 1024               # any one file (RLIMIT_FSIZE); at least MIN_COMPILE_FILE_MB
+    scratch_mb: int = 2048                # growth of the scratch directory in total, all files together
     network: bool = False
     extra_read_only: tuple[str, ...] = ()
     scratch: str | None = None            # writable directory (kernel cache); a private temp dir when None
     warm_cache: str | None = None         # a trusted Warp kernel cache, copied into the scratch before each run
+
+    def __post_init__(self):
+        if self.max_file_mb < MIN_COMPILE_FILE_MB:
+            raise ValueError(f"max_file_mb={self.max_file_mb} is below {MIN_COMPILE_FILE_MB}, the smallest per-file limit "
+                             "under which Warp's compiler can build a kernel (a submission could never run)")
+        if self.scratch_mb < self.max_file_mb:
+            raise ValueError(f"scratch_mb={self.scratch_mb} is below max_file_mb={self.max_file_mb}: one file could not fit")
 
 
 @dataclass
@@ -53,7 +69,23 @@ class Result:
     timed_out: bool
     sandbox: str                           # "bwrap" or "none"
     seconds: float
+    quota_exceeded: bool = False           # the scratch directory grew past policy.scratch_mb and the tree was killed
     extra: dict = field(default_factory=dict)
+
+
+_POLL_SECONDS = 0.25
+
+
+def _tree_bytes(path: str) -> int:
+    """Bytes in every regular file under ``path``."""
+    total = 0
+    for root, _, names in os.walk(path):
+        for name in names:
+            try:
+                total += os.lstat(os.path.join(root, name)).st_size
+            except OSError:
+                pass
+    return total
 
 
 def available() -> bool:
@@ -125,21 +157,29 @@ def run(argv: list[str], *, stdin: str = "", policy: Policy = Policy(), allow_un
             cmd, env = command(argv, policy, scratch)
         else:
             cmd, env = argv, _env(scratch)
+        baseline = _tree_bytes(scratch)
         started = time.perf_counter()
         process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                    env=env, preexec_fn=_limits(policy), start_new_session=True)
-        timed_out = False
-        try:
-            out, err = process.communicate(stdin, timeout=policy.wall_seconds)
-        except subprocess.TimeoutExpired:
-            timed_out = True
+        timed_out = quota_exceeded = False
+        pending: str | None = stdin
+        while True:
             try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            out, err = process.communicate()
+                out, err = process.communicate(pending, timeout=_POLL_SECONDS)
+                break
+            except subprocess.TimeoutExpired:
+                pending = None                                   # the input was handed over on the first call
+                timed_out = time.perf_counter() - started > policy.wall_seconds
+                quota_exceeded = _tree_bytes(scratch) - baseline > policy.scratch_mb << 20
+                if timed_out or quota_exceeded:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    out, err = process.communicate()
+                    break
         return Result(process.returncode, out, err, timed_out, "bwrap" if sandboxed else "none",
-                      time.perf_counter() - started)
+                      time.perf_counter() - started, quota_exceeded)
     finally:
         if policy.scratch is None:
             shutil.rmtree(scratch, ignore_errors=True)

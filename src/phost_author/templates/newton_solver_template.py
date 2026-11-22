@@ -60,13 +60,11 @@ class Runtime:
         device = host.device
         self.factor = wp.zeros((worlds, self.nv, self.nv), dtype=float, device=device)
         self.y = wp.zeros((worlds, self.nv), dtype=float, device=device)
-        self.traces = 0
 
     def solve(self, system):
         wp.launch(cholesky_solve, dim=system.active.shape[0],
                   inputs=[system.h, system.grad, system.active, self.nv, self.factor, self.y],
                   outputs=[system.search, system.search_dot, system.newton_decrement], device=system.h.device)
-        self.traces += 1
 
     def metrics(self):
-        return {"status": 0, "fallbacks": 0, "traces": self.traces}
+        return {"status": 0, "fallbacks": 0}

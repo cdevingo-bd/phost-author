@@ -24,6 +24,13 @@ kernel is generated from the same tree and compiled once per equation (changing 
 The stage's contract check judges the kernel against the text, and a ground-truth test checks the motion against
 MuJoCo (C) integrating the same equation.
 
+A force law is also differentiated symbolically with respect to `v`, and the result is reported as the law's `damping`
+so that a host whose integrator treats joint damping implicitly (MuJoCo's Euler does) treats the typed law the same
+way: `-a*v` then lands as close to MuJoCo's own joint damper as MJWarp's native damper does, where a plain force is
+about 3e-4 away at 2 ms. The derivative is checked by the contract against central differences of the float64
+evaluation. `implicit: false` applies the law as a plain explicit force. At a kink (`abs`, `min`, `max`, `clamp`,
+`where`) the derivative is that of the branch taken.
+
 ## Submitting a kernel
 
 `submit.check_submission(Submission(source))` runs the Python source of a user's runtime (see
@@ -35,8 +42,16 @@ network-seeking submission produces `ok: False` and a reason; it does not raise.
 
 Enforced with `bwrap` (refuses to run untrusted code without it): read-only filesystem; empty private home and
 `/tmp`; no network; own pid and ipc namespaces; the process tree is killed at the wall-clock limit; CPU-time,
-file-size (1 GB: NVRTC maps large files when compiling) and core-dump limits; a scrubbed environment; one writable
-scratch directory, seeded with a copy of the trusted Warp kernel cache.
+core-dump limits; a limit on the size of any one file and one on the total growth of the scratch directory (polled,
+so a fast writer overshoots by a fraction of a second of writing); a scrubbed environment; one writable scratch
+directory, seeded with a copy of the trusted Warp kernel cache. The per-file limit cannot be set below
+`MIN_COMPILE_FILE_MB` (128): Warp's compiler needs to create files that large, and under it no kernel compiles. Measured
+on Warp 1.16: 64 MB fails a one-line kernel, 128 MB passes it and the template Newton solver. Larger kernels were not
+measured, so the default is 1 GB.
+
+Source that defines kernels is loaded with `phost_author.modules.load_source`: Warp reads a kernel's source from a
+file, so source exec'd from a string cannot define one. The source is written to a private temporary file and imported
+under a name made from its hash.
 
 **Not enforced:** the GPU is shared (a submission can hold GPU memory or fault the device); memory is not limited;
 and the verdict is computed in the same process as the submission, so a submission written to tamper with the

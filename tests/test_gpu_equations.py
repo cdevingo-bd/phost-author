@@ -94,3 +94,43 @@ def test_changing_a_constant_does_not_recompile(registry):
     modules = [m for m in sys.modules if m.startswith("phost_expr_")]
     run_gpu(5, [Selection(pf.NAME, PF, dict(expr="-a*q", a=7.0))], registry)
     assert [m for m in sys.modules if m.startswith("phost_expr_")] == modules       # same module, new constant
+
+
+def test_a_typed_damper_lands_where_the_models_own_damper_does(registry):
+    """'-a*v' reports its derivative, so Euler integrates it implicitly. It must be as close to MuJoCo's native joint
+    damper as MJWarp's own native damper is, where a plain force is 3e-4 away at this damping and timestep."""
+    import mujoco
+    from support import XML
+    c = 0.9
+    damped_xml = XML.replace('axis="0 1 0"', f'axis="0 1 0" damping="{c}"').replace('axis="0 0 1"', f'axis="0 0 1" damping="{c}"')
+    model = mujoco.MjModel.from_xml_string(damped_xml)
+    data = mujoco.MjData(model)
+    data.qvel[6:9] = [1.5, -1.0, 0.8]
+    start = data.qvel.copy()
+    for _ in range(150):
+        mujoco.mj_step(model, data)
+    truth = data.qpos.copy()
+
+    def gpu(selections, xml=XML):
+        cm = mujoco.MjModel.from_xml_string(xml)
+        cd = mujoco.MjData(cm)
+        cd.qvel[:] = start
+        mujoco.mj_forward(cm, cd)
+        import mujoco_warp as mjw
+        from phost import Session
+        from phost.testing.mjwarp import DrivableMJWarpHost
+        with wp.ScopedDevice("cuda:0"):
+            m = mjw.put_model(cm)
+            d = mjw.put_data(cm, cd, nworld=1, nconmax=16, njmax=128)
+            host = DrivableMJWarpHost(m, d, cpu_model=cm, cpu_data=cd)
+            with Session(host, selections, registry):
+                for _ in range(150):
+                    mjw.step(m, d)
+            wp.synchronize()
+            return d.qpos.numpy()[0].astype(np.float64)
+
+    typed = gpu([Selection(pf.NAME, PF, dict(expr="-a*v", a=c))])
+    explicit = gpu([Selection(pf.NAME, PF, dict(expr="-a*v", a=c, implicit=False))])
+    control = gpu([], xml=damped_xml)
+    assert error(typed, truth) <= 3 * error(control, truth) + 1e-6, (error(typed, truth), error(control, truth))
+    assert error(explicit, truth) > 10 * max(error(typed, truth), 1e-6)         # the explicit law really is further away

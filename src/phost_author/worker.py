@@ -5,7 +5,6 @@ Reads one JSON request on stdin and prints one result line. Runs inside ``sandbo
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sys
 import traceback
@@ -39,9 +38,8 @@ def main() -> int:
         from phost.stages import register_all
         from phost.testing.contract import check_impl
 
-        # Warp reads kernel source from a file, so the submission is written out and imported, not exec'd.
-        from .expr import build_module
-        module = build_module(f"submission_{hashlib.sha256(request['source'].encode()).hexdigest()[:12]}", request["source"])
+        from .modules import load_source
+        module = load_source(request["source"], "submission")
         runtime_class = getattr(module, request["entry"], None)
         if runtime_class is None:
             raise LookupError(f"the source defines no {request['entry']!r}")

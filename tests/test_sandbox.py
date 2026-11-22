@@ -92,8 +92,51 @@ def test_the_cpu_limit_stops_a_busy_loop_before_the_wall_clock():
 
 
 def test_the_file_size_limit_is_enforced(tmp_path):
-    result = sandbox.run([*PY, "open('/mnt/big', 'wb').write(b'x' * (8 << 20))"], policy=Policy(max_file_mb=1, scratch=str(tmp_path)))
-    assert result.returncode != 0 and (not (tmp_path / "big").exists() or (tmp_path / "big").stat().st_size <= 1 << 20)
+    limit = sandbox.MIN_COMPILE_FILE_MB
+    result = sandbox.run([*PY, f"open('/mnt/big', 'wb').write(b'x' * ({limit + 32} << 20))"],
+                         policy=Policy(max_file_mb=limit, scratch_mb=limit, scratch=str(tmp_path)))
+    assert result.returncode != 0 and (not (tmp_path / "big").exists() or (tmp_path / "big").stat().st_size <= limit << 20)
+
+
+def test_a_policy_below_the_compiler_floor_is_refused():
+    """Under it Warp's compiler cannot build any kernel, so every submission would fail for a reason that looks like its own."""
+    with pytest.raises(ValueError, match="smallest per-file limit"):
+        Policy(max_file_mb=sandbox.MIN_COMPILE_FILE_MB - 1)
+    Policy(max_file_mb=sandbox.MIN_COMPILE_FILE_MB, scratch_mb=sandbox.MIN_COMPILE_FILE_MB)      # the floor itself is fine
+
+
+def test_a_scratch_quota_smaller_than_one_file_is_refused():
+    with pytest.raises(ValueError, match="one file could not fit"):
+        Policy(max_file_mb=512, scratch_mb=256)
+
+
+def test_many_small_files_are_stopped_by_the_scratch_quota_not_the_per_file_limit(tmp_path):
+    """Each file is far under the per-file limit; together they would fill the disk."""
+    writer = ("import os, time\n"
+              "i = 0\n"
+              "while True:\n"
+              "    open(f'/mnt/f{i}', 'wb').write(b'x' * (8 << 20)); i += 1; time.sleep(0.02)\n")
+    started = time.perf_counter()
+    result = sandbox.run([*PY, writer], policy=Policy(max_file_mb=128, scratch_mb=128, wall_seconds=60, scratch=str(tmp_path)))
+    assert result.quota_exceeded and not result.timed_out and result.returncode != 0
+    assert time.perf_counter() - started < 30
+    written = sum(f.stat().st_size for f in tmp_path.iterdir() if f.name.startswith("f"))
+    assert 128 << 20 < written < 400 << 20                      # stopped soon after the quota, not at the wall clock
+
+
+def test_a_program_under_the_quota_is_not_flagged(tmp_path):
+    result = sandbox.run([*PY, "open('/mnt/ok', 'wb').write(b'x' * (4 << 20))"],
+                         policy=Policy(max_file_mb=128, scratch_mb=128, scratch=str(tmp_path)))
+    assert result.returncode == 0 and not result.quota_exceeded
+
+
+def test_a_warm_cache_copied_in_does_not_count_against_the_quota(tmp_path):
+    warm = tmp_path / "warm" / "1.0.0"
+    warm.mkdir(parents=True)
+    (warm / "cache.bin").write_bytes(b"x" * (200 << 20))                 # larger than the quota on its own
+    result = sandbox.run([*PY, "print('ran')"], policy=Policy(max_file_mb=128, scratch_mb=128, warm_cache=str(warm),
+                                                              scratch=str(tmp_path / "scratch")))
+    assert result.returncode == 0 and not result.quota_exceeded
 
 
 def test_the_scratch_directory_is_writable_and_survives_when_given(tmp_path):

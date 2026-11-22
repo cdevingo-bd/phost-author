@@ -155,3 +155,14 @@ def test_a_solver_cannot_reach_the_network_or_the_users_files():
 
 def test_the_report_says_where_the_verdict_was_computed():
     assert "own process" in submit(template())["integrity"]
+
+
+def test_a_new_solver_kernel_compiles_cold_under_the_smallest_allowed_file_limit():
+    """The floor in Policy is a measured fact, not a guess: the real template solver, made new so the sandbox must
+    compile it (the warm cache cannot have it), passes at exactly MIN_COMPILE_FILE_MB."""
+    unique = uuid.uuid4().hex[:8]
+    source = template().replace("dot = float(0.0)", f"dot = float(0.0) * float(1.0) + float(0.0) * float({int(unique, 16) % 997}.0)", 1)
+    assert source != template()
+    policy = Policy(wall_seconds=240, cpu_seconds=200, max_file_mb=sandbox.MIN_COMPILE_FILE_MB, scratch_mb=1024)
+    report = check_submission(Submission(source), policy=policy)
+    assert report["ok"], (report["error"], report.get("stderr", "")[-600:])

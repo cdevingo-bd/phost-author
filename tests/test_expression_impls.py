@@ -95,3 +95,43 @@ def test_warp_source_has_the_expected_shape(registry):
     assert "        out[w, i] = (((-a) * q[w, i]) - (c * v[w, i]))" in source
     assert "    else:\n        out[w, i] = 0.0" in source                    # the mask: no force on non-scalar DOFs
     compile(source, "<kernel>", "exec")
+
+
+# -- damping of a typed law ---------------------------------------------------------------------------
+
+def test_a_typed_damper_integrates_like_the_models_own_damper(registry):
+    """'-c*v' differentiates to c, and the host integrates that implicitly, as it does model damping."""
+    c = 0.8
+    own, native = FakeHost(damping=0.0), FakeHost(damping=c)
+    on = native.model.scalar.astype(bool)
+    with Session(native, [Selection(pf.NAME, "dof.passive_force/native")], registry):
+        want = native.integrate(seed=4)[:, on]
+    with Session(own, [selection(PF, "-a*v", a=c)], registry):
+        got = own.integrate(seed=4)[:, on]
+    assert np.allclose(got, want, rtol=1e-5, atol=1e-6)
+
+
+def test_a_nonlinear_typed_law_reports_its_state_dependent_damping(registry):
+    """-a v |v| has damping 2 a |v|: not a constant, so only the symbolic derivative gets it right."""
+    host = FakeHost()
+    verdict = check_impl(host, selection(PF, "-a*v*abs(v)", a=0.6), registry)
+    assert verdict.ok, verdict.failures
+    assert verdict.metrics["max_damping_error"] < 1e-5
+    impl = registry.impl(PF)
+    v = np.array([[0.5, -2.0, 1.0]])
+    inputs = dict(q=np.zeros((1, 3)), v=v, time=np.zeros(1), scalar=np.ones(3, np.int32))
+    damping = impl.reference(inputs, impl.resolve_params(dict(expr="-a*v*abs(v)", a=0.6)))["damping"]
+    assert np.allclose(damping, 2 * 0.6 * np.abs(v))
+
+
+def test_implicit_false_reports_no_damping(registry):
+    impl = registry.impl(PF)
+    inputs = dict(q=np.zeros((1, 3)), v=np.ones((1, 3)), time=np.zeros(1), scalar=np.ones(3, np.int32))
+    params = impl.resolve_params(dict(expr="-a*v", a=0.5, implicit=False))
+    assert not impl.reference(inputs, params)["damping"].any()
+    assert check_impl(FakeHost(), Selection(pf.NAME, PF, dict(expr="-a*v", a=0.5, implicit=False)), registry).ok
+
+
+def test_the_control_law_has_no_implicit_parameter(registry):
+    assert "implicit" not in [p.name for p in registry.impl(CL).params]
+    assert registry.impl(CL).extensions_optional == ()

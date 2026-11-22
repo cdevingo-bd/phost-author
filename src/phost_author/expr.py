@@ -18,13 +18,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
-import importlib.util
 import math
-import os
-import sys
-import tempfile
-import atexit
-import shutil
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -125,6 +119,119 @@ def parse(text: str, variables: tuple[str, ...]) -> Expression:
     return Expression(text.strip(), tree, frozenset(names))
 
 
+# -- derivative -------------------------------------------------------------------------------------
+def _num(value):
+    return ast.Constant(value=float(value))
+
+
+def _is(node, value) -> bool:
+    return isinstance(node, ast.Constant) and float(node.value) == value
+
+
+def _neg(a):
+    return _num(-a.value) if isinstance(a, ast.Constant) else ast.UnaryOp(op=ast.USub(), operand=a)
+
+
+def _add(a, b):
+    return b if _is(a, 0) else a if _is(b, 0) else ast.BinOp(left=a, op=ast.Add(), right=b)
+
+
+def _sub(a, b):
+    return a if _is(b, 0) else _neg(b) if _is(a, 0) else ast.BinOp(left=a, op=ast.Sub(), right=b)
+
+
+def _mul(a, b):
+    if _is(a, 0) or _is(b, 0):
+        return _num(0)
+    return b if _is(a, 1) else a if _is(b, 1) else ast.BinOp(left=a, op=ast.Mult(), right=b)
+
+
+def _div(a, b):
+    return _num(0) if _is(a, 0) else a if _is(b, 1) else ast.BinOp(left=a, op=ast.Div(), right=b)
+
+
+def _call(name, *arguments):
+    return ast.Call(func=ast.Name(id=name, ctx=ast.Load()), args=list(arguments), keywords=[])
+
+
+def _where(condition, yes, no):
+    return _num(0) if _is(yes, 0) and _is(no, 0) else _call("where", condition, yes, no)
+
+
+def _compare(op, left, right):
+    return ast.Compare(left=left, ops=[op()], comparators=[right])
+
+
+def differentiate(expression: Expression, name: str) -> Expression:
+    """The expression's derivative with respect to the variable ``name``, as an expression over the same names.
+
+    Piecewise functions (abs, min, max, clamp, where) take the derivative of the branch they select, so at a kink the
+    result is one of the one-sided derivatives. Built from the checked tree only, so it stays inside the grammar's
+    functions and operators.
+    """
+    def d(node):
+        if isinstance(node, ast.Constant):
+            return _num(0)
+        if isinstance(node, ast.Name):
+            return _num(1 if node.id == name else 0)
+        if isinstance(node, ast.UnaryOp):
+            inner = d(node.operand)
+            return _neg(inner) if isinstance(node.op, ast.USub) else inner
+        if isinstance(node, ast.BinOp):
+            left, right = node.left, node.right
+            dl, dr = d(left), d(right)
+            if isinstance(node.op, ast.Add):
+                return _add(dl, dr)
+            if isinstance(node.op, ast.Sub):
+                return _sub(dl, dr)
+            if isinstance(node.op, ast.Mult):
+                return _add(_mul(dl, right), _mul(left, dr))
+            if isinstance(node.op, ast.Div):
+                return _sub(_div(dl, right), _div(_mul(left, dr), _mul(right, right)))
+            if _is(dl, 0) and _is(dr, 0):                                  # x ** y, neither depends on the variable
+                return _num(0)
+            if _is(dr, 0):                                                 # y does not depend on it: y x^(y-1) x'
+                return _mul(_mul(right, ast.BinOp(left=left, op=ast.Pow(), right=_sub(right, _num(1)))), dl)
+            return _mul(node, _add(_mul(dr, _call("log", left)), _div(_mul(right, dl), left)))
+        arguments = node.args                                              # a call
+        function = node.func.id
+        if function == "where":                                            # where(condition, yes, no): the condition is not differentiated
+            return _where(arguments[0], d(arguments[1]), d(arguments[2]))
+        derivatives = [d(a) for a in arguments]
+        x, dx = arguments[0], derivatives[0]
+        if function == "sin":
+            return _mul(_call("cos", x), dx)
+        if function == "cos":
+            return _neg(_mul(_call("sin", x), dx))
+        if function == "tan":
+            return _div(dx, _mul(_call("cos", x), _call("cos", x)))
+        if function == "tanh":
+            return _mul(_sub(_num(1), _mul(_call("tanh", x), _call("tanh", x))), dx)
+        if function == "atan":
+            return _div(dx, _add(_num(1), _mul(x, x)))
+        if function == "exp":
+            return _mul(_call("exp", x), dx)
+        if function == "log":
+            return _div(dx, x)
+        if function == "sqrt":
+            return _div(dx, _mul(_num(2), _call("sqrt", x)))
+        if function == "abs":
+            return _where(_compare(ast.GtE, x, _num(0)), dx, _neg(dx))
+        if function == "min":
+            return _where(_compare(ast.LtE, x, arguments[1]), dx, derivatives[1])
+        if function == "max":
+            return _where(_compare(ast.GtE, x, arguments[1]), dx, derivatives[1])
+        if function == "clamp":
+            low, high = arguments[1], arguments[2]
+            return _where(_compare(ast.Lt, x, low), derivatives[1], _where(_compare(ast.Gt, x, high), derivatives[2], dx))
+        raise ExpressionError(f"cannot differentiate {function}()")        # unreachable: the grammar's functions are all handled
+
+    body = d(expression.tree.body)
+    tree = ast.fix_missing_locations(ast.Expression(body=body))
+    names = frozenset(node.id for node in ast.walk(tree) if isinstance(node, ast.Name))
+    return Expression(ast.unparse(body), tree, names)
+
+
 # -- float64 reference ------------------------------------------------------------------------------
 def evaluate(expression: Expression, values: Mapping[str, Any], dtype=None):
     """Evaluate in numpy (float64 unless ``dtype`` says otherwise). ``values`` maps names to arrays or numbers."""
@@ -178,32 +285,3 @@ def to_warp(expression: Expression, emitted: Mapping[str, str]) -> str:
         return f"wp.{FUNCTIONS[node.func.id].warp}({', '.join(go(a) for a in node.args)})"
 
     return go(expression.tree.body)
-
-
-_DIR: list[str] = []
-
-
-def _source_dir() -> str:
-    if not _DIR:
-        path = tempfile.mkdtemp(prefix="phost_expr_")
-        _DIR.append(path)
-        atexit.register(shutil.rmtree, path, ignore_errors=True)
-    return _DIR[0]
-
-
-def build_module(name: str, source: str):
-    """Import generated source as a module (Warp reads kernel source from a file)."""
-    if name in sys.modules:
-        return sys.modules[name]
-    path = os.path.join(_source_dir(), f"{name}.py")
-    with open(path, "w") as stream:
-        stream.write(source)
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    try:
-        spec.loader.exec_module(module)
-    except BaseException:
-        sys.modules.pop(name, None)
-        raise
-    return module

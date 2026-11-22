@@ -51,9 +51,13 @@ def check_submission(submission: Submission, *, scene: str = "trampoline8:impact
                          allow_unsandboxed=allow_unsandboxed)
     report: dict[str, Any] = dict(ok=False, verdict=None, error=None, sandbox=result.sandbox,
                                   seconds=round(result.seconds, 2), timed_out=result.timed_out,
+                                  quota_exceeded=result.quota_exceeded,
                                   integrity="the verdict is computed in the submission's own process")
     if result.timed_out:
         report["error"] = f"timed out after {policy.wall_seconds:.0f} s"
+        return report
+    if result.quota_exceeded:
+        report["error"] = f"wrote more than {policy.scratch_mb} MB to its scratch directory"
         return report
     lines = [line for line in result.stdout.splitlines() if line.startswith(PREFIX)]
     if not lines:
