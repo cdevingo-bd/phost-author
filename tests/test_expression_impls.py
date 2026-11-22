@@ -88,12 +88,15 @@ def test_constants_change_the_result_without_changing_the_equation(host, registr
 
 
 def test_warp_source_has_the_expected_shape(registry):
-    from phost_author import expr
-    target = expression_impls.TARGETS[pf.NAME]
-    source = expression_impls.kernel_source(target, expr.parse("-a*q - c*v", target.variables))
-    assert "def kernel(q: wp.array2d[float], v: wp.array2d[float], time: wp.array[float], scalar: wp.array[int], a: float" in source
-    assert "        out[w, i] = (((-a) * q[w, i]) - (c * v[w, i]))" in source
-    assert "    else:\n        out[w, i] = 0.0" in source                    # the mask: no force on non-scalar DOFs
+    from phost_author.backends.warp_backend import pointwise_source
+    impl = registry.impl(PF)
+    plan = expression_impls.pointwise_plan(registry.contract(pf.NAME), registry.equation(pf.NAME),
+                                           impl.resolve_params(dict(expr="-a*q - c*v", implicit=False)))
+    source, args = pointwise_source(plan)
+    assert "def kernel(p_q: wp.array2d[float], p_v: wp.array2d[float], p_scalar: wp.array[int], a: float" in source
+    assert "        p_force[w, i] = (((-a) * p_q[w, i]) - (c * p_v[w, i]))" in source
+    assert "    else:\n        p_force[w, i] = 0.0" in source                # the mask: no force on non-scalar DOFs
+    assert args == dict(inputs=["q", "v", "scalar"], outputs=["force"])        # only what the equation reads is passed
     compile(source, "<kernel>", "exec")
 
 
@@ -139,36 +142,36 @@ def test_the_control_law_has_no_implicit_parameter(registry):
 
 # ---- preview: what an equation does, without a simulation ----
 
-def test_preview_samples_the_law_along_the_first_variable():
+def test_preview_samples_the_law_along_the_first_variable(registry):
     from phost_author.expression_impls import preview
-    out = preview("dof.passive_force", "-a*q", dict(a=3.0), lo=-1, hi=1, n=5)
+    out = preview(registry, "dof.passive_force", "-a*q", dict(a=3.0), lo=-1, hi=1, n=5)
     assert out["variables"] == ["q", "v", "time"] and out["sweep"] == "q"
     assert out["x"] == [-1, -0.5, 0, 0.5, 1] and out["y"] == [3, 1.5, -0, -1.5, -3]
     assert out["finite"] and out["key"]
 
 
-def test_preview_holds_the_other_variables_where_asked():
+def test_preview_holds_the_other_variables_where_asked(registry):
     from phost_author.expression_impls import preview
-    out = preview("dof.passive_force", "q*v", sweep="q", at=dict(v=2.0), lo=0, hi=1, n=3)
+    out = preview(registry, "dof.passive_force", "q*v", sweep="q", at=dict(v=2.0), lo=0, hi=1, n=3)
     assert out["y"] == [0, 1.0, 2.0]
 
 
-def test_preview_gives_the_symbolic_damping_of_a_force_law():
+def test_preview_gives_the_symbolic_damping_of_a_force_law(registry):
     from phost_author.expression_impls import preview
-    out = preview("dof.passive_force", "-a*v - b*v**3", dict(a=2.0, b=1.0), sweep="v", lo=-1, hi=1, n=3)
+    out = preview(registry, "dof.passive_force", "-a*v - b*v**3", dict(a=2.0, b=1.0), sweep="v", lo=-1, hi=1, n=3)
     assert out["derivative"]["of"] == "v" and "v" in out["derivative"]["text"]
     # law = -a v - b v^3, so damping = -d law/dv = a + 3 b v^2 = 2 + 3 v^2
     assert out["derivative"]["damping"] == pytest.approx([5.0, 2.0, 5.0])
 
 
-def test_a_control_law_has_no_derivative_entry():
+def test_a_control_law_has_no_derivative_entry(registry):
     from phost_author.expression_impls import preview
-    assert "derivative" not in preview("control.law", "-a*length", dict(a=1.0), lo=0, hi=1, n=3)
+    assert "derivative" not in preview(registry, "control.law", "-a*length", dict(a=1.0), lo=0, hi=1, n=3)
 
 
-def test_preview_reports_a_law_that_leaves_the_finite_numbers():
+def test_preview_reports_a_law_that_leaves_the_finite_numbers(registry):
     from phost_author.expression_impls import preview
-    assert preview("dof.passive_force", "1/q", lo=-1, hi=1, n=3)["finite"] is False
+    assert preview(registry, "dof.passive_force", "1/q", lo=-1, hi=1, n=3)["finite"] is False
 
 
 @pytest.mark.parametrize("kwargs,message", [
@@ -178,13 +181,13 @@ def test_preview_reports_a_law_that_leaves_the_finite_numbers():
     (dict(stage="dof.passive_force", text="q", n=1), "lo < hi"),
     (dict(stage="dof.passive_force", text="q", lo=float("nan")), "lo < hi"),
 ])
-def test_preview_refuses_bad_requests(kwargs, message):
+def test_preview_refuses_bad_requests(registry, kwargs, message):
     from phost_author.expression_impls import preview
     with pytest.raises(ContractError, match=message):
-        preview(**kwargs)
+        preview(registry, **kwargs)
 
 
-def test_preview_refuses_an_unacceptable_equation_with_the_parser_message():
+def test_preview_refuses_an_unacceptable_equation_with_the_parser_message(registry):
     from phost_author.expression_impls import preview
     with pytest.raises(ExpressionError):
-        preview("dof.passive_force", "__import__('os')")
+        preview(registry, "dof.passive_force", "__import__('os')")

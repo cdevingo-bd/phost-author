@@ -6,7 +6,16 @@ stage's contract in a sandbox.
 
 ## Typed equations
 
-`dof.passive_force/expression` and `control.law/expression` take the law as text.
+A stage declares how a law for it can be typed (a form, in its contract: `phost.equation`), and `expression_impls.register`
+adds a `<stage>/expression` implementation for every stage that does. There is no table of stages in this package.
+
+| Stage | Form | You type |
+|---|---|---|
+| `dof.passive_force` | one law per DOF | `-a*q - b*v` (names `q v time`) |
+| `control.law` | one law per actuator | `a*(b - length) - c*velocity` |
+| `body.wrench` | one law per body, six outputs | `fx = -c*vx` ... `tz = ...`; names `x y z wx wy wz vx vy vz time`; a line left out is 0 |
+| `probe.state` | one line per measured column | `energy = 0.5*sum(qvel*qvel)`; arrays `qpos qvel qacc`, reductions, `qvel[3]` |
+| `effective.solve`, `newton.linear_solve` | a solver step | `init` and `step` lines, `iterations` passes; `rhs`, `diag`, `A @ name`, `dot`, `k`, `n` |
 
 ```
 phost-lab --plugin phost_author.expression_impls validate examples/typed_spring.json
@@ -18,13 +27,18 @@ phost-lab run examples/typed_spring.json --scene trampoline12:impact
   "params": {"expr": "-a*q - b*q**3 + c*sin(d*time)", "a": 2.0, "b": 5.0, "c": 0.2, "d": 3.0}}}}
 ```
 
-The grammar is small on purpose, so an equation is data, not code: numbers, the stage's names (`q`, `v`, `time` for
-the force law; `length`, `velocity`, `time` for the controller), free constants `a`..`h`, `pi`, `+ - * / **`, and
-`sin cos tan tanh atan exp log sqrt abs min max clamp where` (`where(q > 0, x, y)` takes the comparison). Anything
-else is refused with a message, before any simulation. The float64 reference evaluates the checked tree; the Warp
-kernel is generated from the same tree and compiled once per equation (changing a constant does not recompile).
-The stage's contract check judges the kernel against the text, and a ground-truth test checks the motion against
-MuJoCo (C) integrating the same equation.
+The grammar is small on purpose, so an equation is data, not code: numbers, the stage's names, free constants `a`..`h`, `pi`,
+`+ - * / **`, and `sin cos tan tanh atan exp log sqrt abs min max clamp where` (`where(q > 0, x, y)` takes the comparison).
+Names that are arrays have a type (an axis): entry-by-entry operations need the same axis, `sum mean amax amin maxabs norm dot`
+collapse one to a number, `name[3]` picks an entry, and `A @ name` applies a solver's matrix. Anything else is refused with a
+message, before any simulation. Lines are separated by newlines or `;`.
+
+How a checked tree becomes code is a **backend** (`phost_author.backends`): the NumPy backend evaluates it in float64 and is
+also the reference; the Warp backend generates a kernel from the same tree (compiled once per equation: changing a constant does
+not recompile; written for how the host stores each port, so a `(world, body)` array of 6-vectors works as well as a plain
+float array). A JAX, Torch or CUDA-C backend is a class with `pointwise`, `channels` and `iteration` and one
+`register_backend` call; it is chosen by the host's `backend` name and touches no stage and no grammar. The stage's contract
+check judges the kernel against the text, and ground-truth tests check the motion against MuJoCo (C).
 
 A force law is also differentiated symbolically with respect to `v`, and the result is reported as the law's `damping`
 so that a host whose integrator treats joint damping implicitly (MuJoCo's Euler does) treats the typed law the same
@@ -33,9 +47,35 @@ about 3e-4 away at 2 ms. The derivative is checked by the contract against centr
 evaluation. `implicit: false` applies the law as a plain explicit force. At a kink (`abs`, `min`, `max`, `clamp`,
 `where`) the derivative is that of the branch taken.
 
-`expression_impls.preview(stage, text, constants, sweep=..., at=..., lo=..., hi=..., n=...)` checks an equation and
-samples it along one variable without a simulation, and for a force law returns the symbolic derivative as text and
-its sampled damping. A bad equation raises `ExpressionError` with the message to show.
+### A typed solver step
+
+`effective.solve` and `newton.linear_solve` take a short program instead of an equation. `init` runs once, `step` runs
+`iterations` times, every name keeps its value from one pass to the next, and `x` at the end is the answer:
+
+```
+init:  x = 0*rhs ; r = rhs ; z = r/diag ; p = z ; rz = dot(r, z)          # conjugate gradients, Jacobi preconditioner
+step:  Ap = A @ p
+       alpha = rz / max(dot(p, Ap), 1e-30)
+       x = x + alpha*p
+       r = r - alpha*Ap
+       z = r/diag
+       rz_new = dot(r, z)
+       p = z + (rz_new / max(rz, 1e-30))*p
+       rz = rz_new
+```
+
+A damped Jacobi step is the one line `x = x + a*(rhs - A@x)/diag`. The program is **approximate** by declaration: it claims a
+relative residual (`tolerance`, default 1e-2) and the check holds it to that claim instead of to the stage's exact gate; the
+lab ranks the run on speed and accuracy. The check also reports `max_program_error`, the generated float32 code against the
+same program in float64, so a method that is merely slow to converge is told apart from code that does not compute what was
+typed. The Warp form runs the whole program in one thread per world: right for any program, fast only for small systems.
+It is for trying methods; the lab's opportunity report says what a stage is worth before anyone tunes it.
+
+`expression_impls.preview(registry, stage, text, ...)` checks what was typed and shows what it does without a simulation: for a
+pointwise law a curve per output (and a force law's symbolic derivative), for a probe each channel's value on a sample state,
+for a solver the relative residual after every pass on a random symmetric positive definite system of a chosen size and
+condition number. `describe_form(registry, stage)` says what a person typing for a stage can use. A bad text raises
+`ExpressionError` with the message to show.
 
 ## Submitting a kernel
 
