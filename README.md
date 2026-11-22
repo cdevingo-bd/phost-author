@@ -36,7 +36,8 @@ message, before any simulation. Lines are separated by newlines or `;`.
 How a checked tree becomes code is a **backend** (`phost_author.backends`): the NumPy backend evaluates it in float64 and is
 also the reference; the Warp backend generates a kernel from the same tree (compiled once per equation: changing a constant does
 not recompile; written for how the host stores each port, so a `(world, body)` array of 6-vectors works as well as a plain
-float array). A JAX, Torch or CUDA-C backend is a class with `pointwise`, `channels` and `iteration` and one
+float array); the JAX backend builds a function over `jax.numpy` from it, for a host whose ports are `phost.ports.Ref` cells
+(it needs `jax`, and its tests run only where it is installed). A Torch or CUDA-C backend is a class with `pointwise`, `channels` and `iteration` and one
 `register_backend` call; it is chosen by the host's `backend` name and touches no stage and no grammar. The stage's contract
 check judges the kernel against the text, and ground-truth tests check the motion against MuJoCo (C).
 

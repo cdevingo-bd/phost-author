@@ -334,8 +334,8 @@ def test_a_new_backend_is_one_registration_and_its_code_is_judged_against_the_ty
 
 
 def test_an_unknown_backend_is_a_clear_refusal_and_a_duplicate_name_is_refused():
-    with pytest.raises(CapabilityError, match="no typed-equation backend for host arrays of kind 'jax'"):
-        backend_for("jax")
+    with pytest.raises(CapabilityError, match="no typed-equation backend for host arrays of kind 'torch'"):
+        backend_for("torch")
     with pytest.raises(ValueError, match="already registered"):
         register_backend(type("Dup", (), dict(name="numpy"))())
 

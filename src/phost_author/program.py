@@ -116,36 +116,39 @@ def compile_program(init: str, step: str) -> Program:
     return Program(init_block, step_block, own, tuple(scalars))
 
 
-def symmetric(h, n: int):
+def symmetric(h, n: int, xp=None, dtype=None):
     """The full symmetric matrices of ``h`` (worlds, >= n, >= n), rebuilt from the upper triangle (the rest is undefined)."""
     import numpy as np
-    upper = np.triu(np.asarray(h, np.float64)[:, :n, :n])
-    return upper + np.swapaxes(upper, 1, 2) - np.einsum("wi,ij->wij", np.einsum("wii->wi", upper), np.eye(n))
+    xp, dtype = xp if xp is not None else np, dtype or np.float64
+    upper = xp.triu(xp.asarray(h, dtype)[:, :n, :n])
+    return upper + xp.swapaxes(upper, 1, 2) - xp.einsum("wi,ij->wij", xp.einsum("wii->wi", upper), xp.eye(n, dtype=dtype))
 
 
 def run(program: Program, a, b, constants: Mapping[str, float], iterations: int,
-        on_pass: Callable[[int, Any], None] | None = None):
-    """Run the program in float64 for every world. ``a`` is the full symmetric matrices (worlds, n, n), ``b`` is (worlds, n).
+        on_pass: Callable[[int, Any], None] | None = None, xp=None, dtype=None):
+    """Run the program for every world, in float64 with numpy unless ``xp`` and ``dtype`` say otherwise (the JAX backend runs it
+    in float32 with ``jax.numpy``). ``a`` is the full symmetric matrices (worlds, n, n), ``b`` is (worlds, n).
 
     Returns ``x`` (worlds, n). ``on_pass(k, x)`` is called with the solution after each pass of step.
     """
     import numpy as np
-    a, b = np.asarray(a, np.float64), np.asarray(b, np.float64)
+    xp, dtype = xp if xp is not None else np, dtype or np.float64
+    a, b = xp.asarray(a, dtype), xp.asarray(b, dtype)
     worlds, n = b.shape
-    env: dict[str, Any] = {"A": a, "rhs": b, "diag": np.einsum("wii->wi", a).copy(), "n": np.float64(n), "k": np.float64(0.0),
-                           **{c: np.float64(constants[c]) for c in expr.CONSTANTS}}
-    env["x"] = np.zeros_like(b)
+    scalar = lambda value: xp.asarray(float(value), dtype)
+    env: dict[str, Any] = {"A": a, "rhs": b, "diag": xp.array(xp.einsum("wii->wi", a)), "n": scalar(n), "k": scalar(0.0),
+                           **{c: scalar(constants[c]) for c in expr.CONSTANTS}}
+    env["x"] = xp.zeros_like(b)
 
     def execute(block):
         for statement in block:
-            value = np.asarray(expr.evaluate(statement.law, env), np.float64)
-            kind = statement.law.axis
-            env[statement.target] = np.broadcast_to(value, (worlds, n)).copy() if kind else \
-                np.broadcast_to(value, (worlds, 1)).copy()
+            value = xp.asarray(expr.evaluate(statement.law, env, dtype, xp), dtype)
+            width = n if statement.law.axis else 1
+            env[statement.target] = xp.array(xp.broadcast_to(value, (worlds, width)))
 
     execute(program.init)
     for k in range(int(iterations)):
-        env["k"] = np.float64(k)
+        env["k"] = scalar(k)
         execute(program.step)
         if on_pass is not None:
             on_pass(k, env["x"])

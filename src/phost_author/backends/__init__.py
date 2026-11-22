@@ -2,7 +2,7 @@
 
 A stage declares the form its law takes (``phost.equation``); ``laws`` and ``program`` check the text into trees; a backend
 turns the trees into a callable for the arrays a host's ports carry. The backend is chosen by the host's ``backend`` name
-(``"numpy"``, ``"warp"``). Adding one (JAX, Torch, CUDA C, ...) is one class with three methods registered here, and touches
+(``"numpy"``, ``"warp"``, ``"jax"``). Adding one (Torch, CUDA C, ...) is one class with three methods registered here, and touches
 no stage and no grammar:
 
     class MyBackend:
@@ -85,3 +85,5 @@ def _load_shipped(name: str) -> None:
         from . import numpy_backend            # noqa: F401  (registers itself)
     elif name == "warp":
         from . import warp_backend             # noqa: F401
+    elif name == "jax":
+        from . import jax_backend              # noqa: F401

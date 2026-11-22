@@ -336,21 +336,23 @@ def _reduce(np, name: str, args: list):
             "norm": lambda: np.sqrt(np.sum(x * x, axis=-1, keepdims=True))}[name]()
 
 
-def evaluate(expression: Expression, values: Mapping[str, Any], dtype=None):
-    """Evaluate in numpy (float64 unless ``dtype`` says otherwise). ``values`` maps names to arrays or numbers.
+def evaluate(expression: Expression, values: Mapping[str, Any], dtype=None, xp=None):
+    """Evaluate with an array module (``xp``: numpy by default, float64 unless ``dtype`` says otherwise; ``jax.numpy`` works
+    the same). ``values`` maps names to arrays or numbers.
 
     An array's axis is its last one. A reduction collapses it to a length-1 axis, so the result broadcasts against other
     per-world values; ``name[i]`` picks entry ``i`` the same way; ``A @ v`` multiplies the matrix in ``values`` (its last two
     axes) with ``v``.
     """
     import numpy as np
+    xp = xp if xp is not None else np
     dtype = dtype or np.float64
-    env = {name: np.asarray(value, dtype) for name, value in values.items()}
-    env["pi"] = np.asarray(math.pi, dtype)
+    env = {name: xp.asarray(value, dtype) for name, value in values.items()}
+    env["pi"] = xp.asarray(math.pi, dtype)
 
     def go(node):
         if isinstance(node, ast.Constant):
-            return np.asarray(node.value, dtype)
+            return xp.asarray(node.value, dtype)
         if isinstance(node, ast.Name):
             return env[node.id]
         if isinstance(node, ast.UnaryOp):
@@ -358,14 +360,14 @@ def evaluate(expression: Expression, values: Mapping[str, Any], dtype=None):
             return -value if isinstance(node.op, ast.USub) else value
         if isinstance(node, ast.BinOp):
             if isinstance(node.op, ast.MatMult):
-                return np.einsum("...ij,...j->...i", env[node.left.id], env[node.right.id])
+                return xp.einsum("...ij,...j->...i", env[node.left.id], env[node.right.id])
             left, right = go(node.left), go(node.right)
             if isinstance(node.op, ast.Pow):
-                return np.power(left, right)
-            return {ast.Add: np.add, ast.Sub: np.subtract, ast.Mult: np.multiply, ast.Div: np.divide}[type(node.op)](left, right)
+                return xp.power(left, right)
+            return {ast.Add: xp.add, ast.Sub: xp.subtract, ast.Mult: xp.multiply, ast.Div: xp.divide}[type(node.op)](left, right)
         if isinstance(node, ast.Compare):
-            return {"<": np.less, "<=": np.less_equal, ">": np.greater, ">=": np.greater_equal, "==": np.equal,
-                    "!=": np.not_equal}[_COMPARE[type(node.ops[0])]](go(node.left), go(node.comparators[0]))
+            return {"<": xp.less, "<=": xp.less_equal, ">": xp.greater, ">=": xp.greater_equal, "==": xp.equal,
+                    "!=": xp.not_equal}[_COMPARE[type(node.ops[0])]](go(node.left), go(node.comparators[0]))
         if isinstance(node, ast.Subscript):
             index = node.slice.value
             array = env[node.value.id]
@@ -373,8 +375,8 @@ def evaluate(expression: Expression, values: Mapping[str, Any], dtype=None):
                 raise ExpressionError(f"{node.value.id}[{index}]: {node.value.id} has only {array.shape[-1]} entries")
             return array[..., index:index + 1]
         if node.func.id in REDUCTIONS:
-            return _reduce(np, node.func.id, [go(argument) for argument in node.args])
-        function = getattr(np, FUNCTIONS[node.func.id].numpy)
+            return _reduce(xp, node.func.id, [go(argument) for argument in node.args])
+        function = getattr(xp, FUNCTIONS[node.func.id].numpy)
         return function(*[go(argument) for argument in node.args])
 
     with np.errstate(all="ignore"):
