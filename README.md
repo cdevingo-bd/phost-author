@@ -1,6 +1,8 @@
 # phost-author
 
-Author [phost](https://github.com/cdevingo-bd/phost) stages without writing a simulator integration: type an equation, or submit a kernel.
+Write [phost](https://github.com/cdevingo-bd/phost) implementations without a simulator integration. Type an equation and get
+a Warp kernel with a float64 reference generated from the same expression tree, or submit a kernel to be checked against the
+stage's contract in a sandbox.
 
 ## Typed equations
 

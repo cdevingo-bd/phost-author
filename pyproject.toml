@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "phost-author"
 version = "0.1.0.dev0"
-description = "Author phost stages: a typed-equation DSL and a sandbox for user-written kernels"
+description = "Write phost implementations without a simulator integration: typed equations compiled to Warp kernels, and a sandbox that checks a submitted kernel."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}
