@@ -12,14 +12,13 @@ import traceback
 PREFIX = "PHOST_AUTHOR_RESULT "
 
 
-def build_host(scene_id: str, worlds: int):
+def build_host(scenes, scene_id: str, worlds: int):
     import mujoco
     import mujoco_warp as mjw
     import warp as wp
     from phost.testing.mjwarp import DrivableMJWarpHost
-    from phost_lab import default_scenes
 
-    scene = default_scenes().get(scene_id)
+    scene = scenes.get(scene_id)
     cpu_model = mujoco.MjModel.from_xml_string(scene.xml())
     cpu = mujoco.MjData(cpu_model)
     for _ in range(scene.settle_steps):
@@ -50,9 +49,15 @@ def main() -> int:
             id=f"{stage}/user", stage=stage, stage_version=1, version="user", title="User submission",
             kind=ImplKind.KERNEL, doc=(module.__doc__ or "").strip(),
             factory=lambda host, params: runtime_class(host, params), reference=getattr(module, "reference", None)))
-        host = build_host(request["scene"], request["worlds"])
+        from phost_lab import default_scenes
+        from phost_lab.opportunity import scene_for
+        scenes = default_scenes()
+        scene_id = request.get("scene") or scene_for(stage, scenes, registry)
+        if scene_id is None:
+            raise LookupError(f"no scene accepts stage {stage!r} on this host")
+        host = build_host(scenes, scene_id, request["worlds"])
         verdict = check_impl(host, Selection(stage, f"{stage}/user", request.get("params", {})), registry)
-        print(PREFIX + json.dumps(dict(verdict=dict(ok=bool(verdict.ok), stage=verdict.stage, impl=verdict.impl,
+        print(PREFIX + json.dumps(dict(scene=scene_id, verdict=dict(ok=bool(verdict.ok), stage=verdict.stage, impl=verdict.impl,
                                                       metrics={k: float(v) for k, v in verdict.metrics.items()},
                                                       failures=list(verdict.failures)))), flush=True)
         return 0

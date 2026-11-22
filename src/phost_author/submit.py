@@ -29,15 +29,6 @@ def default_warm_cache() -> str | None:
     return path if os.path.isdir(path) else None
 
 
-DEFAULT_CHECK_SCENE = "trampoline8:impact"
-CHECK_SCENES = {"effective.solve": "trampoline8:discrete"}      # the host only makes that call under the discrete integrator
-
-
-def check_scene(stage: str) -> str:
-    """The small scene a submission for ``stage`` is checked on when the caller names none."""
-    return CHECK_SCENES.get(stage, DEFAULT_CHECK_SCENE)
-
-
 @dataclass(frozen=True)
 class Submission:
     source: str
@@ -48,14 +39,17 @@ class Submission:
 
 def check_submission(submission: Submission, *, scene: str | None = None, worlds: int = 2,
                      policy: sandbox.Policy = sandbox.Policy(), allow_unsandboxed: bool = False) -> dict:
-    """Returns ``{ok, verdict, error, sandbox, seconds, ...}``. ``ok`` is True only if the check ran and passed.
+    """Returns ``{ok, verdict, scene, error, sandbox, seconds, ...}``. ``ok`` is True only if the check ran and passed.
+
+    ``scene`` None lets the worker pick the first scene on which the host accepts the stage (``phost_lab.scene_for``);
+    the report says which one it ran on.
 
     A hostile or broken submission yields ``ok: False`` with a reason; it does not raise.
     """
     if policy.warm_cache is None:
         policy = dataclasses.replace(policy, warm_cache=default_warm_cache())
     request = dict(source=submission.source, stage=submission.stage, entry=submission.entry,
-                   params=dict(submission.params), scene=scene or check_scene(submission.stage), worlds=worlds)
+                   params=dict(submission.params), scene=scene, worlds=worlds)
     result = sandbox.run([sys.executable, "-s", "-m", "phost_author.worker"], stdin=json.dumps(request), policy=policy,
                          allow_unsandboxed=allow_unsandboxed)
     report: dict[str, Any] = dict(ok=False, verdict=None, error=None, sandbox=result.sandbox,
@@ -80,5 +74,6 @@ def check_submission(submission: Submission, *, scene: str | None = None, worlds
         report["stderr"] = result.stderr[-3000:]                 # compiler messages land here
         return report
     report["verdict"] = payload["verdict"]
+    report["scene"] = payload["scene"]
     report["ok"] = bool(payload["verdict"]["ok"])
     return report

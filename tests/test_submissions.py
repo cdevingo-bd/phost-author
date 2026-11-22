@@ -168,10 +168,18 @@ def test_a_new_solver_kernel_compiles_cold_under_the_smallest_allowed_file_limit
     assert report["ok"], (report["error"], report.get("stderr", "")[-600:])
 
 
-def test_each_stage_is_checked_on_a_scene_where_the_host_makes_that_call():
-    from phost_author.submit import check_scene
-    assert check_scene("newton.linear_solve") == "trampoline8:impact"
-    assert check_scene("effective.solve") == "trampoline8:discrete"
+def test_a_stage_is_checked_on_the_first_scene_where_the_host_accepts_it():
+    from phost import Registry
+    from phost.stages import register_all
+    from phost_lab import default_scenes
+    from phost_lab.opportunity import scene_for
+    registry = Registry()
+    register_all(registry)
+    scenes = default_scenes()
+    assert scene_for("newton.linear_solve", scenes, registry) == "trampoline8:impact"
+    assert scene_for("effective.solve", scenes, registry) == "trampoline8:discrete"      # the host only calls it under the discrete integrator
+    assert scene_for("body.wrench", scenes, registry) == "trampoline8:impact"             # a stage with only a native implementation
+    assert scene_for("no.such.stage", scenes, registry) is None
 
 
 EFFECTIVE_SOURCE = '''"""A numpy float64 solve of the effective metric."""
@@ -198,4 +206,5 @@ class Runtime:
 def test_an_effective_solve_kernel_is_checked_without_naming_a_scene():
     report = check_submission(Submission(EFFECTIVE_SOURCE, stage="effective.solve"), policy=POLICY)
     assert report["ok"], report
+    assert report["scene"] == "trampoline8:discrete"          # none was named: the worker found the scene where the host accepts the stage
     assert report["verdict"]["metrics"]["max_native_difference"] < 1e-3
