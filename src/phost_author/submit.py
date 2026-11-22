@@ -29,6 +29,15 @@ def default_warm_cache() -> str | None:
     return path if os.path.isdir(path) else None
 
 
+DEFAULT_CHECK_SCENE = "trampoline8:impact"
+CHECK_SCENES = {"effective.solve": "trampoline8:discrete"}      # the host only makes that call under the discrete integrator
+
+
+def check_scene(stage: str) -> str:
+    """The small scene a submission for ``stage`` is checked on when the caller names none."""
+    return CHECK_SCENES.get(stage, DEFAULT_CHECK_SCENE)
+
+
 @dataclass(frozen=True)
 class Submission:
     source: str
@@ -37,7 +46,7 @@ class Submission:
     params: Mapping[str, Any] = field(default_factory=dict)
 
 
-def check_submission(submission: Submission, *, scene: str = "trampoline8:impact", worlds: int = 2,
+def check_submission(submission: Submission, *, scene: str | None = None, worlds: int = 2,
                      policy: sandbox.Policy = sandbox.Policy(), allow_unsandboxed: bool = False) -> dict:
     """Returns ``{ok, verdict, error, sandbox, seconds, ...}``. ``ok`` is True only if the check ran and passed.
 
@@ -46,7 +55,7 @@ def check_submission(submission: Submission, *, scene: str = "trampoline8:impact
     if policy.warm_cache is None:
         policy = dataclasses.replace(policy, warm_cache=default_warm_cache())
     request = dict(source=submission.source, stage=submission.stage, entry=submission.entry,
-                   params=dict(submission.params), scene=scene, worlds=worlds)
+                   params=dict(submission.params), scene=scene or check_scene(submission.stage), worlds=worlds)
     result = sandbox.run([sys.executable, "-s", "-m", "phost_author.worker"], stdin=json.dumps(request), policy=policy,
                          allow_unsandboxed=allow_unsandboxed)
     report: dict[str, Any] = dict(ok=False, verdict=None, error=None, sandbox=result.sandbox,

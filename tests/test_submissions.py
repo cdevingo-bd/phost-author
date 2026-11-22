@@ -166,3 +166,36 @@ def test_a_new_solver_kernel_compiles_cold_under_the_smallest_allowed_file_limit
     policy = Policy(wall_seconds=240, cpu_seconds=200, max_file_mb=sandbox.MIN_COMPILE_FILE_MB, scratch_mb=1024)
     report = check_submission(Submission(source), policy=policy)
     assert report["ok"], (report["error"], report.get("stderr", "")[-600:])
+
+
+def test_each_stage_is_checked_on_a_scene_where_the_host_makes_that_call():
+    from phost_author.submit import check_scene
+    assert check_scene("newton.linear_solve") == "trampoline8:impact"
+    assert check_scene("effective.solve") == "trampoline8:discrete"
+
+
+EFFECTIVE_SOURCE = '''"""A numpy float64 solve of the effective metric."""
+import numpy as np
+from phost.stages import effective_solve as es
+
+
+class Runtime:
+    def __init__(self, host, params):
+        self.nv = host.facts().nv
+
+    def solve(self, s):
+        h, rhs = s.h.numpy(), s.rhs.numpy()
+        out = np.zeros((h.shape[0], self.nv), np.float32)
+        for w in range(h.shape[0]):
+            out[w] = np.linalg.solve(es._symmetric(h[w], self.nv), rhs[w, :self.nv].astype(np.float64))
+        s.qacc.assign(out)
+
+    def metrics(self):
+        return {"status": 0}
+'''
+
+
+def test_an_effective_solve_kernel_is_checked_without_naming_a_scene():
+    report = check_submission(Submission(EFFECTIVE_SOURCE, stage="effective.solve"), policy=POLICY)
+    assert report["ok"], report
+    assert report["verdict"]["metrics"]["max_native_difference"] < 1e-3
