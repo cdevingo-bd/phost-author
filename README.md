@@ -1,6 +1,6 @@
 # phost-author
 
-Author [phost](../phost) stages without writing a simulator integration: type an equation, or submit a kernel.
+Author [phost](https://github.com/cdevingo-bd/phost) stages without writing a simulator integration: type an equation, or submit a kernel.
 
 ## Typed equations
 
