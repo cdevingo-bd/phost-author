@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 770" width="1000" height="770" role="img" aria-labelledby="ttl dsc">
+<title id="ttl">phost-author: write an implementation as text or as a kernel; it is checked before anything runs</title>
+<desc id="dsc">Two ways to author an implementation of a phost stage. Typed text: the stage declares the form a law takes (pointwise, channels or an iterative solver step); the text is checked against a small grammar; the checked tree is turned into code by a backend (NumPy, which is also the float64 reference, Warp, JAX, or one you register) and registered as the stage's expression implementation; preview shows what it does with no simulation. A kernel: Python source is checked in a bubblewrap sandbox against the stage's contract on a scene where the stage applies, and a report says ok or why not. Both end at phost's contract check.</desc>
+<style>
+  :root { --bg:#ffffff; --ink:#1b1b1a; --ink2:#4a4945; --muted:#66645f; --line:#8c8a84; --rule:#d6d5cf;
+          --host:#efeeea; --accent:#1f5fbf; --accentfill:#e8f0fb; --onaccent:#ffffff; --warn:#8a4b00; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#161615; --ink:#ecebe7; --ink2:#c2c1ba; --muted:#8f8d86; --line:#77756f; --rule:#34332f;
+            --host:#242422; --accent:#6ea2f0; --accentfill:#1b2a40; --onaccent:#0d1726; --warn:#e0a458; }
+  }
+  text { font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--ink); font-size: 12px; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace; }
+  .title { font-size: 16px; font-weight: 700; }
+  .head { font-size: 13px; font-weight: 700; }
+  .sub { fill: var(--ink2); }
+  .small { font-size: 11px; fill: var(--ink2); }
+  .tag { font-size: 10.5px; fill: var(--muted); }
+  .bold { font-weight: 700; }
+  .acc { fill: var(--accent); }
+  .mut { fill: var(--muted); }
+  .warn { fill: var(--warn); }
+  .box { fill: var(--bg); stroke: var(--line); stroke-width: 1; }
+  .hostbox { fill: var(--host); stroke: var(--line); stroke-width: 1; }
+  .corebox { fill: var(--accentfill); stroke: var(--accent); stroke-width: 1; }
+  .ownbox { fill: var(--bg); stroke: var(--accent); stroke-width: 1.4; }
+  .yours { fill: none; stroke: var(--line); stroke-width: 1; stroke-dasharray: 4 3; }
+  .frame { fill: none; stroke: var(--rule); stroke-width: 1; }
+  .rule { stroke: var(--rule); stroke-width: 1; fill: none; }
+  .ln { stroke: var(--line); stroke-width: 1; fill: none; }
+  .arrow { stroke: var(--ink2); stroke-width: 1.2; fill: none; marker-end: url(#h); }
+  .aarrow { stroke: var(--accent); stroke-width: 1.2; fill: none; marker-end: url(#ha); }
+  .back { stroke: var(--muted); stroke-width: 1; fill: none; stroke-dasharray: 3 3; marker-end: url(#h); }
+  .badge { fill: var(--accent); }
+  .badgetx { fill: var(--onaccent); font-size: 10.5px; font-weight: 700; text-anchor: middle; }
+</style>
+<defs><marker id="h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,1 L9,5 L0,9 z" style="fill:var(--ink2)"/></marker><marker id="ha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,1 L9,5 L0,9 z" style="fill:var(--accent)"/></marker></defs>
+<rect x="0" y="0" width="1000" height="770" style="fill:var(--bg)"/>
+<text x="24" y="28" class="title" text-anchor="start">phost-author: write an implementation as text or as a kernel; it is checked before anything runs</text>
+<rect x="24" y="52" width="16" height="16" rx="2" class="badge"/>
+<text x="32" y="64" class="badgetx">1</text>
+<text x="48" y="64" class="head" text-anchor="start">Typed text</text>
+<text x="130.0" y="64" class="sub" text-anchor="start">an equation or a short program, as data and not as code</text>
+<rect x="24" y="80" width="168" height="92" rx="3" class="box"/>
+<text x="33" y="98" class="bold mono" text-anchor="start">the text</text>
+<text x="34" y="118" class="small mono" text-anchor="start">-a*q - b*v</text>
+<text x="34" y="132" class="small mono" text-anchor="start">init: x = 0*rhs ...</text>
+<text x="34" y="146" class="small mono" text-anchor="start">step: Ap = A @ p ...</text>
+<rect x="222" y="80" width="200" height="92" rx="3" class="box"/>
+<text x="231" y="98" class="bold mono" text-anchor="start">the stage's form</text>
+<text x="231" y="115" class="small" text-anchor="start">Pointwise: a law per element</text>
+<text x="231" y="129" class="small" text-anchor="start">Channels: lines over arrays</text>
+<text x="231" y="143" class="small" text-anchor="start">Iteration: init + step passes</text>
+<rect x="452" y="80" width="200" height="92" rx="3" class="corebox"/>
+<text x="461" y="98" class="bold mono" text-anchor="start">grammar check</text>
+<text x="461" y="115" class="small" text-anchor="start">a small language: numbers,</text>
+<text x="461" y="129" class="small" text-anchor="start">the stage's names, a few</text>
+<text x="461" y="143" class="small" text-anchor="start">functions; bad text is refused</text>
+<text x="461" y="157" class="small" text-anchor="start">with a message, before any run</text>
+<path d="M194,126 L220,126" class="arrow"/>
+<path d="M424,126 L450,126" class="aarrow"/>
+<text x="222" y="188" class="tag" text-anchor="start">no table of stages here: a stage that declares a form is typeable</text>
+<rect x="682" y="80" width="294" height="92" rx="3" class="corebox"/>
+<text x="691" y="98" class="bold mono" text-anchor="start">backend: checked tree to code</text>
+<text x="692" y="118" class="small mono bold" text-anchor="start">NumPy</text>
+<text x="748" y="118" class="small" text-anchor="start">float64; also the reference</text>
+<text x="692" y="132" class="small mono bold" text-anchor="start">Warp</text>
+<text x="748" y="132" class="small" text-anchor="start">a kernel, compiled once per equation</text>
+<text x="692" y="146" class="small mono bold" text-anchor="start">JAX</text>
+<text x="748" y="146" class="small" text-anchor="start">jax.numpy, for hosts with Ref cells</text>
+<rect x="690" y="153" width="278" height="15" rx="3" class="yours"/>
+<text x="698" y="164" class="small mono" text-anchor="start">yours: register_backend(...), one class</text>
+<path d="M654,126 L680,126" class="aarrow"/>
+<rect x="682" y="210" width="294" height="92" rx="3" class="ownbox"/>
+<text x="691" y="228" class="bold mono" text-anchor="start">&lt;stage&gt;/expression</text>
+<text x="691" y="245" class="small" text-anchor="start">registered for every stage with a form;</text>
+<text x="691" y="259" class="small" text-anchor="start">a solver step is approximate by declaration:</text>
+<text x="691" y="273" class="small" text-anchor="start">it claims a tolerance and is held to it;</text>
+<text x="691" y="287" class="small" text-anchor="start">a force law reports its own damping</text>
+<path d="M829,174 L829,208" class="aarrow"/>
+<rect x="24" y="210" width="616" height="92" rx="3" class="box"/>
+<text x="33" y="228" class="head" text-anchor="start">preview: what a text does, with no simulation</text>
+<text x="33" y="245" class="small" text-anchor="start">a curve per output; each channel's value on a sample state; a solver's relative residual</text>
+<text x="33" y="259" class="small" text-anchor="start">after every pass on a random symmetric positive definite system you size;</text>
+<text x="33" y="273" class="small" text-anchor="start">describe_form says what a stage's text can use. A bad text is an error message.</text>
+<path d="M680,256 L642,256" class="arrow"/>
+<rect x="24" y="340" width="16" height="16" rx="2" class="badge"/>
+<text x="32" y="352" class="badgetx">2</text>
+<text x="48" y="352" class="head" text-anchor="start">A kernel</text>
+<text x="116.0" y="352" class="sub" text-anchor="start">Python source that defines the stage's runtime class</text>
+<rect x="24" y="368" width="190" height="84" rx="3" class="box"/>
+<text x="33" y="386" class="bold mono" text-anchor="start">source</text>
+<text x="33" y="403" class="small" text-anchor="start">class Runtime with the stage's</text>
+<text x="33" y="417" class="small" text-anchor="start">entry method, and a reference</text>
+<text x="33" y="431" class="small" text-anchor="start">for stages that need one</text>
+<rect x="244" y="368" width="270" height="84" rx="3" class="corebox"/>
+<text x="253" y="386" class="bold mono" text-anchor="start">sandbox (bubblewrap)</text>
+<text x="253" y="403" class="small" text-anchor="start">read-only filesystem, private home and /tmp,</text>
+<text x="253" y="417" class="small" text-anchor="start">no network, own pid and ipc, CPU and file</text>
+<text x="253" y="431" class="small" text-anchor="start">limits, process tree killed at the wall clock</text>
+<rect x="544" y="368" width="432" height="84" rx="3" class="corebox"/>
+<text x="553" y="386" class="bold mono" text-anchor="start">worker: load, then the contract check</text>
+<text x="553" y="403" class="small" text-anchor="start">source is written to a private file and imported under its hash;</text>
+<text x="553" y="417" class="small" text-anchor="start">run on a MuJoCo Warp host: the scene you name, else the</text>
+<text x="553" y="431" class="small" text-anchor="start">first one where the stage applies (phost-lab picks it)</text>
+<path d="M216,410 L242,410" class="arrow"/>
+<path d="M516,410 L542,410" class="aarrow"/>
+<rect x="24" y="478" width="952" height="46" rx="3" class="ownbox"/>
+<text x="33" y="496" class="bold mono" text-anchor="start">report</text>
+<text x="33" y="513" class="small" text-anchor="start">ok: True, or ok: False with a reason: a wrong, crashing, hanging, input-modifying or network-seeking submission does not raise</text>
+<path d="M760,454 L760,476" class="aarrow"/>
+<path d="M24,548 L976,548" class="rule"/>
+<rect x="24" y="568" width="16" height="16" rx="2" class="badge"/>
+<text x="32" y="580" class="badgetx">3</text>
+<text x="48" y="580" class="head" text-anchor="start">Both end at phost's contract check</text>
+<text x="298.0" y="580" class="sub" text-anchor="start">the same one that gates a graph run and a leaderboard entry</text>
+<rect x="24" y="596" width="300" height="56" rx="3" class="box"/>
+<text x="33" y="614" class="bold mono" text-anchor="start">a typed implementation</text>
+<text x="33" y="631" class="small" text-anchor="start">is judged against the text: the float64</text>
+<text x="33" y="645" class="small" text-anchor="start">evaluation of the same checked tree</text>
+<rect x="350" y="596" width="300" height="56" rx="3" class="box"/>
+<text x="359" y="614" class="bold mono" text-anchor="start">a kernel</text>
+<text x="359" y="631" class="small" text-anchor="start">is judged against the stage's reference, or</text>
+<text x="359" y="645" class="small" text-anchor="start">the reference() the submission supplies</text>
+<rect x="676" y="596" width="300" height="56" rx="3" class="box"/>
+<text x="685" y="614" class="bold mono" text-anchor="start">what the sandbox does not do</text>
+<text x="685" y="631" class="small" text-anchor="start">protect the verdict: it is computed in the</text>
+<text x="685" y="645" class="small" text-anchor="start">submission's own process (see README)</text>
+<text x="24" y="686" class="small" text-anchor="start">A typed solver step is for trying methods: the Warp form runs the whole program in one thread per world.</text>
+<text x="24" y="702" class="small" text-anchor="start">The same text runs on any host whose backend is present; a stage a host does not offer is not offered here either.</text>
+<text x="24" y="730" class="small" text-anchor="start">Used by phost-lab (graphs name &lt;stage&gt;/expression), phost-dash (Build: Type an equation, Write a kernel) and phost-agent (typed candidates, preview).</text>
+</svg>

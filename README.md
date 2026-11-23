@@ -1,8 +1,10 @@
 # phost-author
 
-Write [phost](https://github.com/cdevingo-bd/phost) implementations without a simulator integration. Type an equation and get
-a Warp kernel with a float64 reference generated from the same expression tree, or submit a kernel to be checked against the
-stage's contract in a sandbox.
+Write [phost](https://github.com/cdevingo-bd/phost) implementations without a simulator integration. Type an equation and get an
+implementation whose float64 reference is generated from the same expression tree, compiled for the host's own arrays (NumPy, a
+Warp kernel, or a JAX function), or submit a kernel to be checked against the stage's contract in a sandbox.
+
+![Two ways to author an implementation. Typed text: the stage declares the form a law takes, the text is checked against a small grammar, a backend (NumPy, Warp, JAX, or one you register) turns the checked tree into code, and preview shows what it does with no simulation. A kernel: Python source is checked in a bubblewrap sandbox against the stage's contract. Both end at phost's contract check.](docs/flow.svg)
 
 ## Typed equations
 
@@ -76,13 +78,16 @@ It is for trying methods; the lab's opportunity report says what a stage is wort
 pointwise law a curve per output (and a force law's symbolic derivative), for a probe each channel's value on a sample state,
 for a solver the relative residual after every pass on a random symmetric positive definite system of a chosen size and
 condition number. `describe_form(registry, stage)` says what a person typing for a stage can use. A bad text raises
-`ExpressionError` with the message to show.
+`ExpressionError` with the message to show. phost-dash's *Type an equation* pane and the arena in phost-agent (as its `preview` action) use the same function.
 
 ## Submitting a kernel
 
 `submit.check_submission(Submission(source))` runs the Python source of a user's runtime (see
 `src/phost_author/templates/newton_solver_template.py`, a working Newton solver) through the stage's contract check on a
-real MJWarp host, inside a sandbox, and returns a report. A wrong, crashing, hanging, input-modifying or
+MuJoCo Warp host, inside a sandbox, and returns a report. The scene is the one you name (`scene=`), else the first on which the
+stage applies. The contract it is judged against is the stage's, not MuJoCo's, but the worker builds a MuJoCo Warp host
+(`worker.build_host`), and that is the one place in this package that names a simulator: checking a submission on another
+host means building that host there. A wrong, crashing, hanging, input-modifying or
 network-seeking submission produces `ok: False` and a reason; it does not raise.
 
 ## The sandbox, exactly
