@@ -83,12 +83,13 @@ condition number. `describe_form(registry, stage)` says what a person typing for
 ## Submitting a kernel
 
 `submit.check_submission(Submission(source))` runs the Python source of a user's runtime (see
-`src/phost_author/templates/newton_solver_template.py`, a working Newton solver) through the stage's contract check on a
-MuJoCo Warp host, inside a sandbox, and returns a report. The scene is the one you name (`scene=`), else the first on which the
-stage applies. The contract it is judged against is the stage's, not MuJoCo's, but the worker builds a MuJoCo Warp host
-(`worker.build_host`), and that is the one place in this package that names a simulator: checking a submission on another
-host means building that host there. A wrong, crashing, hanging, input-modifying or
-network-seeking submission produces `ok: False` and a reason; it does not raise.
+`src/phost_author/templates/newton_solver_template.py`, a working Newton solver) through the stage's contract check, inside a
+sandbox, and returns a report that names the scene and the engine it was checked on. The scene is the one you name (`scene=`),
+else the first on which the stage applies. The host comes from the scene's own engine (`phost_lab.engine.check_host`), so this
+package names no simulator: a kernel for `effective.solve` can be checked on the NumPy chain with no GPU, and on a MuJoCo Warp
+scene with one. The source has to handle the arrays that host hands it (NumPy arrays on the chain, Warp arrays on MuJoCo Warp), so a
+kernel written for one array type fails the check on the other. Needs `phost-lab` (`pip install phost-author[lab]`). A wrong, crashing,
+hanging, input-modifying or network-seeking submission produces `ok: False` and a reason; it does not raise.
 
 ## The sandbox, exactly
 

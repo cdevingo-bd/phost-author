@@ -1,6 +1,8 @@
 """The typed forms on the real MuJoCo Warp host: several outputs into a vector-typed port, reductions over the state, and a
 typed solver step whose generated kernel is judged against the same program in float64. Needs a reviewed build and CUDA."""
 
+import contextlib
+
 import numpy as np
 import pytest
 
@@ -25,7 +27,7 @@ if HAVE:
     from phost.testing.contract import check_impl
     from phost_author import expression_impls
     from phost_author.backends.warp_backend import layout_of
-    from phost_author.worker import build_host
+    from phost_author.worker import checked_host
 
     from support import make_host
 
@@ -48,11 +50,21 @@ def reviewed():
         pytest.skip("this mujoco_warp build is not in the reviewed tables")
 
 
+_open = contextlib.ExitStack()
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _close_hosts():
+    yield
+    _open.close()
+
+
 def lab_host(stage, registry, worlds=2):
+    """A host from the scene's own engine (the first scene where the stage applies), held open until the module ends."""
     from phost_lab import default_scenes
     from phost_lab.opportunity import scene_for
     scenes = default_scenes()
-    return build_host(scenes, scene_for(stage, scenes, registry), worlds)
+    return _open.enter_context(checked_host(scenes, scene_for(stage, scenes, registry), worlds))
 
 
 WRENCH = "fx = -c*vx\nfy = -c*vy\nfz = -c*vz - a\ntx = -0.1*c*wx\nty = -0.1*c*wy\ntz = -0.1*c*wz"

@@ -1,10 +1,12 @@
-"""Sandboxed worker: load a user's runtime source, build a host, run the stage's contract check, print the verdict.
+"""Sandboxed worker: load a user's runtime source, build a host from the scene's engine, run the stage's contract check,
+print the verdict.
 
 Reads one JSON request on stdin and prints one result line. Runs inside ``sandbox.run``.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sys
 import traceback
@@ -12,22 +14,15 @@ import traceback
 PREFIX = "PHOST_AUTHOR_RESULT "
 
 
-def build_host(scenes, scene_id: str, worlds: int):
-    import mujoco
-    import mujoco_warp as mjw
-    import warp as wp
-    from phost.testing.mjwarp import DrivableMJWarpHost
+@contextlib.contextmanager
+def checked_host(scenes, scene_id: str, worlds: int):
+    """A host over ``worlds`` worlds of ``scene_id`` that a contract check can drive, built by the scene's own engine, for as
+    long as the block runs. Nothing here names a simulator: the engine (``phost_lab.engine``) knows how."""
+    from phost_lab.engine import check_host, engine_for
 
     scene = scenes.get(scene_id)
-    cpu_model = mujoco.MjModel.from_xml_string(scene.xml())
-    cpu = mujoco.MjData(cpu_model)
-    for _ in range(scene.settle_steps):
-        mujoco.mj_step(cpu_model, cpu)
-    mujoco.mj_forward(cpu_model, cpu)
-    with wp.ScopedDevice("cuda:0"):
-        model = mjw.put_model(cpu_model)
-        data = mjw.put_data(cpu_model, cpu, nworld=worlds, nconmax=16 * worlds + 64, njmax=2048)
-    return DrivableMJWarpHost(model, data, cpu_model=cpu_model, cpu_data=cpu)
+    with engine_for(scene).load(scene) as loaded:
+        yield check_host(loaded, worlds)
 
 
 def main() -> int:
@@ -55,9 +50,9 @@ def main() -> int:
         scene_id = request.get("scene") or scene_for(stage, scenes, registry)
         if scene_id is None:
             raise LookupError(f"no scene accepts stage {stage!r} on this host")
-        host = build_host(scenes, scene_id, request["worlds"])
-        verdict = check_impl(host, Selection(stage, f"{stage}/user", request.get("params", {})), registry)
-        print(PREFIX + json.dumps(dict(scene=scene_id, verdict=dict(ok=bool(verdict.ok), stage=verdict.stage, impl=verdict.impl,
+        with checked_host(scenes, scene_id, request["worlds"]) as host:
+            verdict = check_impl(host, Selection(stage, f"{stage}/user", request.get("params", {})), registry)
+        print(PREFIX + json.dumps(dict(scene=scene_id, engine=scenes.get(scene_id).engine, verdict=dict(ok=bool(verdict.ok), stage=verdict.stage, impl=verdict.impl,
                                                       metrics={k: float(v) for k, v in verdict.metrics.items()},
                                                       failures=list(verdict.failures)))), flush=True)
         return 0

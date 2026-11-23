@@ -5,14 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "phost-author"
 version = "0.1.0.dev0"
-description = "Write phost implementations without a simulator integration: typed equations compiled to Warp kernels, and a sandbox that checks a submitted kernel."
+description = "Write phost implementations without a simulator integration: typed equations compiled to NumPy, Warp or JAX, and a sandbox that checks a submitted kernel."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}
 dependencies = ["phost", "numpy>=1.24"]
 
 [project.optional-dependencies]
-gpu = ["warp-lang", "mujoco", "mujoco-warp", "phost-lab"]
+lab = ["phost-lab"]                       # a submitted kernel is checked on the host of the scene's own engine
+gpu = ["warp-lang", "mujoco", "mujoco-warp", "phost-lab"]      # the MuJoCo Warp stack, for the Warp backend and its scenes
 test = ["pytest>=7"]
 
 [tool.setuptools.packages.find]

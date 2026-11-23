@@ -75,5 +75,6 @@ def check_submission(submission: Submission, *, scene: str | None = None, worlds
         return report
     report["verdict"] = payload["verdict"]
     report["scene"] = payload["scene"]
+    report["engine"] = payload.get("engine")                # the simulator the scene runs on, so a report says where it was checked
     report["ok"] = bool(payload["verdict"]["ok"])
     return report

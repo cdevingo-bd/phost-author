@@ -100,8 +100,8 @@
 <rect x="544" y="368" width="432" height="84" rx="3" class="corebox"/>
 <text x="553" y="386" class="bold mono" text-anchor="start">worker: load, then the contract check</text>
 <text x="553" y="403" class="small" text-anchor="start">source is written to a private file and imported under its hash;</text>
-<text x="553" y="417" class="small" text-anchor="start">run on a MuJoCo Warp host: the scene you name, else the</text>
-<text x="553" y="431" class="small" text-anchor="start">first one where the stage applies (phost-lab picks it)</text>
+<text x="553" y="417" class="small" text-anchor="start">run on the host of the scene's own engine (MuJoCo Warp,</text>
+<text x="553" y="431" class="small" text-anchor="start">a chain, ...): the scene you name, else the first that fits</text>
 <path d="M216,410 L242,410" class="arrow"/>
 <path d="M516,410 L542,410" class="aarrow"/>
 <rect x="24" y="478" width="952" height="46" rx="3" class="ownbox"/>
